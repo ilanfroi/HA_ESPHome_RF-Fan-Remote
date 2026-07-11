@@ -174,8 +174,7 @@ Copy the generated `transmit_raw` timing array into your YAML button/script.
 ## 💡 Lessons Learned
 
 ### 1. Defective CC1101 Modules
-Our first E07-M1101D module was dead on arrival — RX worked (via RadioLib) but TX produced no output on any pin. Always test with a known-good SDR receiver. If `esphome-radiolib-cc1101` initializes but you see no RF output, try a different module before debugging further.
-
+Don't Blame the Hardware Too Quickly — We initially thought the first CC1101 module was defective because the fan didn't respond. After discovering the even parity bit requirement, both modules work perfectly. If your TX reaches other receivers but the target device doesn't respond, the issue is likely in the protocol encoding — not the hardware.
 ### 2. ESPHome's Built-in CC1101 TX is Broken
 Hours were spent debugging SPI configurations before discovering that ESPHome's native `cc1101` platform has a fundamental GPIO/RMT conflict. The RadioLib external component bypasses this entirely. Don't waste time with the built-in approach.
 

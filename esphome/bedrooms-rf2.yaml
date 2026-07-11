@@ -1,0 +1,418 @@
+# ESP32-C3 + CC1101 Ceiling Fan RF Control
+# Uses RadioLib external component for reliable TX+RX on single GDO0 pin
+#
+# Hardware: ESP32-C3 Super Mini Plus + Ebyte E07-M1101D (CC1101 433MHz)
+# Protocol: 30-bit OOK (29 data + 1 even parity), 433.92 MHz
+#
+# IMPORTANT: ESPHome's built-in cc1101 TX is broken (issue #16876).
+# This config uses juanboro/esphome-radiolib-cc1101 which works correctly.
+
+substitutions:
+  device_name: bedrooms-rf2
+  friendly_name: "Bedrooms RF Controller"
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  on_boot:
+    then:
+      - lambda: |-
+          // Start in RX mode on boot
+          id(radio1).recv();
+
+esp32:
+  board: esp32-c3-devkitm-1
+  framework:
+    type: arduino
+
+# --- Secrets (replace with your values in secrets.yaml) ---
+api:
+  encryption:
+    key: !secret api_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+    on_begin:
+      then:
+        - lambda: |-
+            // Put radio in standby during OTA to prevent interference
+            id(radio1).standby();
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "${device_name}-AP"
+    password: !secret ap_password
+
+captive_portal:
+
+logger:
+  level: DEBUG
+
+# --- External Component: RadioLib CC1101 ---
+external_components:
+  - source:
+      type: git
+      url: https://github.com/juanboro/esphome-radiolib-cc1101
+      ref: main
+    components: [radiolib_cc1101]
+
+# --- SPI Bus ---
+spi:
+  clk_pin: GPIO4
+  mosi_pin: GPIO6
+  miso_pin: GPIO5
+
+# --- RadioLib CC1101 Configuration ---
+radiolib_cc1101:
+  id: radio1
+  cs_pin: GPIO7
+  gdo0_pin: GPIO2
+  frequency: 433.92
+  modulation: "OOK"
+  bit_rate: 1.0
+  on_transmit:
+    then:
+      - lambda: |-
+          id(radio1).xmit();
+  on_complete:
+    then:
+      - lambda: |-
+          id(radio1).recv();
+
+# --- Remote Transmitter (TX) ---
+# OOK modulation: carrier_duty_percent=100% (no PWM), carrier_frequency=0Hz
+# The CC1101 module generates the 433.92MHz carrier internally
+remote_transmitter:
+  id: rf_tx
+  pin: GPIO2
+  carrier_duty_percent: 100%
+  carrier_frequency: 0Hz
+
+# --- Remote Receiver (RX) ---
+# idle must be > 7093us inter-frame gap
+remote_receiver:
+  id: rf_rx
+  pin:
+    number: GPIO2
+    mode: INPUT_PULLUP
+  filter: 200us
+  idle: 8000us
+  tolerance: 50%
+  on_rc_switch:
+    - lambda: |-
+        // Log received codes for debugging
+        ESP_LOGD("rf_rx", "RC Switch: protocol=%d, code=0x%llX (%lld)",
+                 x.protocol, x.code, x.code);
+
+# ===========================================================================
+# HILA FAN (Living Room) - Address prefix: 10011001000111011011
+# ===========================================================================
+
+button:
+  # --- Hila Fan Controls ---
+  - platform: template
+    name: "Hila Fan OFF"
+    id: hila_off
+    on_press:
+      - remote_transmitter.transmit_raw:
+          transmitter_id: rf_tx
+          code: [1182,-394, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 394,-1182, 1182,-394, 394]
+          repeat:
+            times: 10
+            wait_time: 7093us
+
+  - platform: template
+    name: "Hila Fan Speed 1"
+    id: hila_speed1
+    on_press:
+      - remote_transmitter.transmit_raw:
+          transmitter_id: rf_tx
+          code: [1182,-394, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 394,-1182, 394]
+          repeat:
+            times: 10
+            wait_time: 7093us
+
+  - platform: template
+    name: "Hila Fan Speed 2"
+    id: hila_speed2
+    on_press:
+      - remote_transmitter.transmit_raw:
+          transmitter_id: rf_tx
+          code: [1182,-394, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 394,-1182, 394]
+          repeat:
+            times: 10
+            wait_time: 7093us
+
+  - platform: template
+    name: "Hila Fan Speed 3"
+    id: hila_speed3
+    on_press:
+      - remote_transmitter.transmit_raw:
+          transmitter_id: rf_tx
+          code: [1182,-394, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 1182]
+          repeat:
+            times: 10
+            wait_time: 7093us
+
+  - platform: template
+    name: "Hila Fan Speed 4"
+    id: hila_speed4
+    on_press:
+      - remote_transmitter.transmit_raw:
+          transmitter_id: rf_tx
+          code: [1182,-394, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 394,-1182, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 1182]
+          repeat:
+            times: 10
+            wait_time: 7093us
+
+  - platform: template
+    name: "Hila Fan Speed 5"
+    id: hila_speed5
+    on_press:
+      - remote_transmitter.transmit_raw:
+          transmitter_id: rf_tx
+          code: [1182,-394, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 394]
+          repeat:
+            times: 10
+            wait_time: 7093us
+
+  - platform: template
+    name: "Hila Fan Speed 6"
+    id: hila_speed6
+    on_press:
+      - remote_transmitter.transmit_raw:
+          transmitter_id: rf_tx
+          code: [1182,-394, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 394]
+          repeat:
+            times: 10
+            wait_time: 7093us
+
+  - platform: template
+    name: "Hila Fan Light"
+    id: hila_light
+    on_press:
+      - remote_transmitter.transmit_raw:
+          transmitter_id: rf_tx
+          code: [1182,-394, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 1182]
+          repeat:
+            times: 10
+            wait_time: 7093us
+
+  - platform: template
+    name: "Hila Fan Reverse"
+    id: hila_reverse
+    on_press:
+      - remote_transmitter.transmit_raw:
+          transmitter_id: rf_tx
+          code: [1182,-394, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 1182]
+          repeat:
+            times: 10
+            wait_time: 7093us
+
+  - platform: template
+    name: "Hila Fan Natural"
+    id: hila_natural
+    on_press:
+      - remote_transmitter.transmit_raw:
+          transmitter_id: rf_tx
+          code: [1182,-394, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 394,-1182, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 1182]
+          repeat:
+            times: 10
+            wait_time: 7093us
+
+  # --- Hila Fan Timer Controls ---
+  - platform: template
+    name: "Hila Fan Timer 1H"
+    id: hila_timer_1h
+    on_press:
+      - remote_transmitter.transmit_raw:
+          transmitter_id: rf_tx
+          code: [1182,-394, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 1182]
+          repeat:
+            times: 10
+            wait_time: 7093us
+
+  - platform: template
+    name: "Hila Fan Timer 2H"
+    id: hila_timer_2h
+    on_press:
+      - remote_transmitter.transmit_raw:
+          transmitter_id: rf_tx
+          code: [1182,-394, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 1182]
+          repeat:
+            times: 10
+            wait_time: 7093us
+
+  - platform: template
+    name: "Hila Fan Timer 4H"
+    id: hila_timer_4h
+    on_press:
+      - remote_transmitter.transmit_raw:
+          transmitter_id: rf_tx
+          code: [1182,-394, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394]
+          repeat:
+            times: 10
+            wait_time: 7093us
+
+  - platform: template
+    name: "Hila Fan Timer 8H"
+    id: hila_timer_8h
+    on_press:
+      - remote_transmitter.transmit_raw:
+          transmitter_id: rf_tx
+          code: [1182,-394, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 394]
+          repeat:
+            times: 10
+            wait_time: 7093us
+
+  # ===========================================================================
+  # BEDROOM FAN - Address prefix: 01110110110101111010
+  # ===========================================================================
+
+  - platform: template
+    name: "Bedroom Fan OFF"
+    id: bedroom_off
+    on_press:
+      - remote_transmitter.transmit_raw:
+          transmitter_id: rf_tx
+          code: [394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 394,-1182, 1182,-394, 394]
+          repeat:
+            times: 10
+            wait_time: 7093us
+
+  - platform: template
+    name: "Bedroom Fan Speed 1"
+    id: bedroom_speed1
+    on_press:
+      - remote_transmitter.transmit_raw:
+          transmitter_id: rf_tx
+          code: [394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 394,-1182, 394]
+          repeat:
+            times: 10
+            wait_time: 7093us
+
+  - platform: template
+    name: "Bedroom Fan Speed 2"
+    id: bedroom_speed2
+    on_press:
+      - remote_transmitter.transmit_raw:
+          transmitter_id: rf_tx
+          code: [394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 394,-1182, 394]
+          repeat:
+            times: 10
+            wait_time: 7093us
+
+  - platform: template
+    name: "Bedroom Fan Speed 3"
+    id: bedroom_speed3
+    on_press:
+      - remote_transmitter.transmit_raw:
+          transmitter_id: rf_tx
+          code: [394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 1182]
+          repeat:
+            times: 10
+            wait_time: 7093us
+
+  - platform: template
+    name: "Bedroom Fan Speed 4"
+    id: bedroom_speed4
+    on_press:
+      - remote_transmitter.transmit_raw:
+          transmitter_id: rf_tx
+          code: [394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 1182]
+          repeat:
+            times: 10
+            wait_time: 7093us
+
+  - platform: template
+    name: "Bedroom Fan Speed 5"
+    id: bedroom_speed5
+    on_press:
+      - remote_transmitter.transmit_raw:
+          transmitter_id: rf_tx
+          code: [394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 394]
+          repeat:
+            times: 10
+            wait_time: 7093us
+
+  - platform: template
+    name: "Bedroom Fan Speed 6"
+    id: bedroom_speed6
+    on_press:
+      - remote_transmitter.transmit_raw:
+          transmitter_id: rf_tx
+          code: [394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 394]
+          repeat:
+            times: 10
+            wait_time: 7093us
+
+  - platform: template
+    name: "Bedroom Fan Light"
+    id: bedroom_light
+    on_press:
+      - remote_transmitter.transmit_raw:
+          transmitter_id: rf_tx
+          code: [394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 1182]
+          repeat:
+            times: 10
+            wait_time: 7093us
+
+  - platform: template
+    name: "Bedroom Fan Reverse"
+    id: bedroom_reverse
+    on_press:
+      - remote_transmitter.transmit_raw:
+          transmitter_id: rf_tx
+          code: [394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 1182]
+          repeat:
+            times: 10
+            wait_time: 7093us
+
+  - platform: template
+    name: "Bedroom Fan Natural"
+    id: bedroom_natural
+    on_press:
+      - remote_transmitter.transmit_raw:
+          transmitter_id: rf_tx
+          code: [394,-1182, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 1182,-394, 1182,-394, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 394,-1182, 394,-1182, 394,-1182, 394,-1182, 1182,-394, 394,-1182, 1182,-394, 1182]
+          repeat:
+            times: 10
+            wait_time: 7093us
+
+# --- State Tracking via RX ---
+# These binary sensors track the physical remote's transmissions
+# to keep Home Assistant state in sync
+
+binary_sensor:
+  - platform: remote_receiver
+    name: "Hila Fan Remote - OFF"
+    rc_switch_raw:
+      code: "10011001000111011011110010001"
+      protocol: 1
+    filters:
+      - delayed_off: 500ms
+
+  - platform: remote_receiver
+    name: "Bedroom Fan Remote - OFF"
+    rc_switch_raw:
+      code: "01110110110101111010110010001"
+      protocol: 1
+    filters:
+      - delayed_off: 500ms
+
+# --- Diagnostic Sensors ---
+sensor:
+  - platform: wifi_signal
+    name: "${friendly_name} WiFi Signal"
+    update_interval: 60s
+
+  - platform: uptime
+    name: "${friendly_name} Uptime"
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: "${friendly_name} IP Address"
